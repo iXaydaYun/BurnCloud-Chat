@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { ChatMessage, Conversation } from "@/lib/types";
 
 const STORAGE_KEY = "ai-chat-store-v1";
+const CURRENT_KEY = "ai-chat-current-v1";
 
 export type ChatStoreState = {
   conversations: Conversation[];
@@ -37,6 +38,22 @@ function persistState(state: ChatStoreState) {
   }
 }
 
+function loadCurrentId(conversations: Conversation[]): string {
+  if (typeof window === "undefined") return conversations[0]?.id ?? "";
+  const saved = window.localStorage.getItem(CURRENT_KEY);
+  if (saved && conversations.find((c) => c.id === saved)) return saved;
+  return conversations[0]?.id ?? "";
+}
+
+function persistCurrentId(id: string) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(CURRENT_KEY, id);
+  } catch (_error) {
+    // ignore
+  }
+}
+
 function createConversation(title = "新会话"): Conversation {
   const now = Date.now();
   return {
@@ -50,6 +67,7 @@ function createConversation(title = "新会话"): Conversation {
 export function useChatStore() {
   const [state, setState] = useState<ChatStoreState>(emptyState);
   const [loaded, setLoaded] = useState(false);
+  const [currentId, setCurrentId] = useState<string>("");
 
   useEffect(() => {
     const initial = loadState();
@@ -57,9 +75,12 @@ export function useChatStore() {
       const first = createConversation("新的聊天");
       const next = { conversations: [first], messages: { [first.id]: [] } };
       setState(next);
+      setCurrentId(first.id);
       persistState(next);
+      persistCurrentId(first.id);
     } else {
       setState(initial);
+      setCurrentId(loadCurrentId(initial.conversations));
     }
     setLoaded(true);
   }, []);
@@ -69,7 +90,12 @@ export function useChatStore() {
     persistState(state);
   }, [state, loaded]);
 
-  const currentConversationId = state.conversations[0]?.id ?? "";
+  useEffect(() => {
+    if (!loaded || !currentId) return;
+    persistCurrentId(currentId);
+  }, [currentId, loaded]);
+
+  const currentConversationId = currentId || state.conversations[0]?.id || "";
 
   const actions = useMemo(
     () => ({
@@ -81,6 +107,7 @@ export function useChatStore() {
             messages: { [conv.id]: [], ...prev.messages },
           };
         });
+        setCurrentId((prev) => prev || crypto.randomUUID());
       },
       renameConversation(id: string, title: string) {
         setState((prev) => ({
@@ -95,6 +122,8 @@ export function useChatStore() {
           const conversations = prev.conversations.filter((c) => c.id !== id);
           const messages = { ...prev.messages };
           delete messages[id];
+          const nextCurrent = conversations[0]?.id ?? "";
+          setCurrentId(nextCurrent);
           return { conversations, messages };
         });
       },
@@ -141,6 +170,7 @@ export function useChatStore() {
           const others = prev.conversations.filter((c) => c.id !== id);
           const current = prev.conversations.find((c) => c.id === id);
           if (!current) return prev;
+          setCurrentId(id);
           return {
             conversations: [current, ...others],
             messages: prev.messages,
