@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-
+import { MessageBubble } from "@/components/message-bubble";
 import { Button } from "@/components/ui/button";
 import { useChatStore } from "@/lib/store/chat-store";
-import type { ChatMessage } from "@/lib/types";
+import type { Attachment, ChatMessage } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const PROVIDER_OPTIONS = [
@@ -88,6 +88,7 @@ export default function Home() {
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const controllerRef = useRef<AbortController | null>(null);
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const currentMessages = messages[currentConversationId] ?? [];
 
@@ -111,8 +112,18 @@ export default function Home() {
   }, [currentMessages.length]);
 
   const handleSend = async () => {
-    if (!input.trim() || !currentConversationId || isSending) return;
+    if (
+      (!input.trim() && pendingFiles.length === 0) ||
+      !currentConversationId ||
+      isSending
+    )
+      return;
     setError(null);
+    const attachments = await uploadPendingFiles();
+    if (attachments === null) {
+      setIsSending(false);
+      return;
+    }
     const userMessage: ChatMessage = {
       id: crypto.randomUUID(),
       conversationId: currentConversationId,
@@ -120,6 +131,7 @@ export default function Home() {
       content: input.trim(),
       status: "done",
       createdAt: Date.now(),
+      attachments,
     };
     actions.addMessage(userMessage);
 
@@ -147,6 +159,7 @@ export default function Home() {
         model,
         provider,
         options: { stream: true },
+        attachments,
       },
       (delta) => {
         actions.updateMessage(currentConversationId, assistantId, (prev) => ({
@@ -168,6 +181,7 @@ export default function Home() {
     });
     setIsSending(false);
     controllerRef.current = null;
+    setPendingFiles([]);
   };
 
   const handleStop = () => {
@@ -175,6 +189,59 @@ export default function Home() {
     controllerRef.current = null;
     setIsSending(false);
   };
+
+  const handleFiles = (files: FileList | null) => {
+    if (!files) return;
+    const next: File[] = [];
+    for (const file of Array.from(files)) {
+      if (!file.type.startsWith("image/") && !file.type.startsWith("video/")) {
+        setError("仅支持图片或视频文件");
+        continue;
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        setError("文件大小需小于 5MB");
+        continue;
+      }
+      next.push(file);
+    }
+    if (next.length) {
+      setPendingFiles((prev) => [...prev, ...next]);
+    }
+  };
+
+  async function uploadPendingFiles(): Promise<Attachment[] | null> {
+    if (pendingFiles.length === 0) return [];
+    const uploaded: Attachment[] = [];
+    for (const file of pendingFiles) {
+      const form = new FormData();
+      form.append("file", file);
+      try {
+        const res = await fetch("/api/upload", { method: "POST", body: form });
+        if (!res.ok) {
+          const text = await res.text();
+          setError(text || "上传失败");
+          return null;
+        }
+        const json = (await res.json()) as {
+          url: string;
+          mime?: string;
+          size?: number;
+          name?: string;
+        };
+        uploaded.push({
+          type: file.type.startsWith("image/") ? "image" : "video",
+          url: json.url,
+          mime: json.mime ?? file.type,
+          size: json.size ?? file.size,
+          name: json.name ?? file.name,
+        });
+      } catch (err) {
+        setError((err as Error).message);
+        return null;
+      }
+    }
+    return uploaded;
+  }
 
   if (!loaded) {
     return (
@@ -267,27 +334,7 @@ export default function Home() {
               </div>
             ) : (
               currentMessages.map((msg) => (
-                <div key={msg.id} className="space-y-1">
-                  <div className="text-xs font-medium text-muted-foreground">
-                    {msg.role === "assistant" ? "AI" : "你"}
-                    <span className="ml-2 text-[11px]">
-                      {new Date(msg.createdAt).toLocaleTimeString()}
-                    </span>
-                  </div>
-                  <div
-                    className={cn(
-                      "whitespace-pre-wrap rounded-md border px-3 py-2 text-sm",
-                      msg.role === "assistant"
-                        ? "bg-muted/50"
-                        : "bg-primary text-primary-foreground border-primary/20",
-                    )}
-                  >
-                    {msg.content || (msg.status === "streaming" ? "…" : "")}
-                  </div>
-                  {msg.status === "error" ? (
-                    <div className="text-xs text-destructive">发送失败</div>
-                  ) : null}
-                </div>
+                <MessageBubble key={msg.id} message={msg} />
               ))
             )}
           </div>
@@ -311,6 +358,22 @@ export default function Home() {
                 当前会话：{conversations[0]?.title ?? "-"}
               </div>
               <div className="flex items-center gap-2">
+                <label className="flex cursor-pointer items-center gap-1 text-xs text-muted-foreground">
+                  <input
+                    type="file"
+                    accept="image/*,video/*"
+                    multiple
+                    className="hidden"
+                    onChange={(e) => handleFiles(e.target.files)}
+                    disabled={isSending}
+                  />
+                  添加图片/视频
+                </label>
+                {pendingFiles.length ? (
+                  <span className="text-xs text-muted-foreground">
+                    待发送文件：{pendingFiles.length} 个
+                  </span>
+                ) : null}
                 {isSending ? (
                   <Button variant="outline" size="sm" onClick={handleStop}>
                     停止
