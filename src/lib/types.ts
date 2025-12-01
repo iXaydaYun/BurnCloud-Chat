@@ -1,6 +1,7 @@
 export type Conversation = {
   id: string;
   title: string;
+  systemPrompt?: string;
   createdAt: number;
   updatedAt: number;
 };

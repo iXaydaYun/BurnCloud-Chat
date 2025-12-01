@@ -59,6 +59,7 @@ function createConversation(title = "新会话"): Conversation {
   return {
     id: crypto.randomUUID(),
     title,
+    systemPrompt: "",
     createdAt: now,
     updatedAt: now,
   };
@@ -176,6 +177,16 @@ export function useChatStore() {
             messages: prev.messages,
           };
         });
+      },
+      updateSystemPrompt(id: string, prompt: string) {
+        setState((prev) => ({
+          conversations: prev.conversations.map((c) =>
+            c.id === id
+              ? { ...c, systemPrompt: prompt, updatedAt: Date.now() }
+              : c,
+          ),
+          messages: prev.messages,
+        }));
       },
     }),
     [],

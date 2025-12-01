@@ -12,11 +12,24 @@ const PROVIDER_OPTIONS = [
     key: "openai",
     label: "OpenAI",
     models: ["gpt-4o", "gpt-4.1", "gpt-3.5-turbo"],
+    capabilities: { vision: true },
   },
 ];
 
 const DEFAULT_MODEL = "gpt-4o";
 const DEFAULT_PROVIDER = "openai";
+
+const PROMPT_TEMPLATES = [
+  { label: "简洁回答", value: "请用简洁的要点回答用户问题。" },
+  {
+    label: "代码助手",
+    value: "你是代码助手，回答时附上简短注释与复杂度提醒。",
+  },
+  {
+    label: "多模态说明",
+    value: "根据用户上传的图片或视频，先描述内容，再提出可能的改进建议。",
+  },
+];
 
 type StreamOptions = {
   controller: AbortController;
@@ -89,8 +102,12 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const controllerRef = useRef<AbortController | null>(null);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [systemPrompt, setSystemPrompt] = useState("");
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const currentMessages = messages[currentConversationId] ?? [];
+  const currentConversation = conversations.find(
+    (c) => c.id === currentConversationId,
+  );
 
   const providerModels = useMemo(() => {
     const p = PROVIDER_OPTIONS.find((item) => item.key === provider);
@@ -102,6 +119,12 @@ export default function Home() {
       setModel(providerModels[0] ?? DEFAULT_MODEL);
     }
   }, [providerModels, model]);
+
+  useEffect(() => {
+    if (currentConversation?.systemPrompt !== undefined) {
+      setSystemPrompt(currentConversation.systemPrompt ?? "");
+    }
+  }, [currentConversation?.systemPrompt]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: 需要在消息数量变化时滚动到底部
   useEffect(() => {
@@ -124,6 +147,7 @@ export default function Home() {
       setIsSending(false);
       return;
     }
+    actions.updateSystemPrompt(currentConversationId, systemPrompt);
     const userMessage: ChatMessage = {
       id: crypto.randomUUID(),
       conversationId: currentConversationId,
@@ -153,9 +177,13 @@ export default function Home() {
 
     await streamChat(
       {
-        messages: currentMessages
-          .map((m) => ({ role: m.role, content: m.content }))
-          .concat({ role: "user", content: userMessage.content }),
+        messages: [
+          ...(systemPrompt
+            ? [{ role: "system" as const, content: systemPrompt }]
+            : []),
+          ...currentMessages.map((m) => ({ role: m.role, content: m.content })),
+          { role: "user" as const, content: userMessage.content },
+        ],
         model,
         provider,
         options: { stream: true },
@@ -266,22 +294,53 @@ export default function Home() {
         </div>
         <div className="flex-1 space-y-2 overflow-y-auto">
           {conversations.map((conv) => (
-            <button
+            <div
               key={conv.id}
               className={cn(
-                "w-full rounded-md px-3 py-2 text-left text-sm transition",
+                "rounded-md border px-3 py-2 text-left text-sm transition",
                 conv.id === currentConversationId
                   ? "bg-background shadow-sm ring-1 ring-primary/40"
                   : "hover:bg-background",
               )}
-              type="button"
-              onClick={() => actions.setCurrent(conv.id)}
             >
-              <div className="line-clamp-1 font-medium">{conv.title}</div>
-              <div className="text-[11px] text-muted-foreground">
-                {new Date(conv.updatedAt).toLocaleString()}
+              <div className="flex items-start justify-between gap-2">
+                <button
+                  type="button"
+                  className="flex-1 text-left"
+                  onClick={() => actions.setCurrent(conv.id)}
+                >
+                  <div className="line-clamp-1 font-medium">{conv.title}</div>
+                  <div className="text-[11px] text-muted-foreground">
+                    {new Date(conv.updatedAt).toLocaleString()}
+                  </div>
+                </button>
+                <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                  <button
+                    type="button"
+                    className="rounded px-1 hover:bg-accent"
+                    onClick={() => {
+                      const next = prompt("重命名会话", conv.title);
+                      if (next?.trim()) {
+                        actions.renameConversation(conv.id, next.trim());
+                      }
+                    }}
+                  >
+                    重命名
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded px-1 text-destructive hover:bg-accent"
+                    onClick={() => {
+                      if (confirm("确认删除该会话？")) {
+                        actions.deleteConversation(conv.id);
+                      }
+                    }}
+                  >
+                    删除
+                  </button>
+                </div>
               </div>
-            </button>
+            </div>
           ))}
         </div>
       </aside>
@@ -318,6 +377,32 @@ export default function Home() {
               ))}
             </select>
           </div>
+          {currentConversation ? (
+            <div className="flex w-full flex-wrap items-center gap-2">
+              <span className="text-xs text-muted-foreground">系统提示</span>
+              <textarea
+                className="flex-1 min-w-[200px] rounded-md border bg-background px-2 py-1 text-xs"
+                rows={2}
+                value={systemPrompt}
+                onChange={(e) => setSystemPrompt(e.target.value)}
+                disabled={isSending}
+                placeholder="为当前会话设定系统提示"
+              />
+              <div className="flex flex-wrap gap-1">
+                {PROMPT_TEMPLATES.map((tpl) => (
+                  <button
+                    key={tpl.label}
+                    type="button"
+                    className="rounded-md border px-2 py-1 text-[11px] text-muted-foreground hover:bg-accent"
+                    onClick={() => setSystemPrompt(tpl.value)}
+                    disabled={isSending}
+                  >
+                    {tpl.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
           {error ? (
             <div className="ml-auto text-sm text-destructive">{error}</div>
           ) : null}

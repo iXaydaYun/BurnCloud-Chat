@@ -4,6 +4,10 @@ export type ProviderConfig = {
   path: string;
   apiKeyEnv: string;
   models: string[];
+  capabilities?: {
+    vision?: boolean;
+    video?: boolean;
+  };
   headers?: Record<string, string>;
 };
 
@@ -14,6 +18,7 @@ export const providers: Record<string, ProviderConfig> = {
     path: "/v1/chat/completions",
     apiKeyEnv: "OPENAI_API_KEY",
     models: ["gpt-4o", "gpt-4.1", "gpt-3.5-turbo"],
+    capabilities: { vision: true, video: false },
   },
 };
 
