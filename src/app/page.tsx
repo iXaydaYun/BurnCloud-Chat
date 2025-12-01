@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+
 import { MessageBubble } from "@/components/message-bubble";
 import { Button } from "@/components/ui/button";
 import { useChatStore } from "@/lib/store/chat-store";
@@ -12,12 +13,14 @@ const PROVIDER_OPTIONS = [
     key: "openai",
     label: "OpenAI",
     models: ["gpt-4o", "gpt-4.1", "gpt-3.5-turbo"],
-    capabilities: { vision: true },
+    capabilities: { vision: true, video: false },
   },
 ];
 
 const DEFAULT_MODEL = "gpt-4o";
 const DEFAULT_PROVIDER = "openai";
+const ROW_ESTIMATE = 120;
+const OVERSCAN = 6;
 
 const PROMPT_TEMPLATES = [
   { label: "简洁回答", value: "请用简洁的要点回答用户问题。" },
@@ -31,9 +34,7 @@ const PROMPT_TEMPLATES = [
   },
 ];
 
-type StreamOptions = {
-  controller: AbortController;
-};
+type StreamOptions = { controller: AbortController };
 
 type ChatRequestPayload = {
   messages: { role: ChatMessage["role"]; content: string }[];
@@ -48,7 +49,8 @@ async function streamChat(
   onDelta: (chunk: string) => void,
   onError: (message: string) => void,
   options: StreamOptions,
-) {
+): Promise<{ status: number; durationMs: number } | null> {
+  const started = performance.now();
   try {
     const res = await fetch("/api/chat", {
       method: "POST",
@@ -60,7 +62,7 @@ async function streamChat(
     if (!res.ok || !res.body) {
       const text = await res.text();
       onError(text || "请求失败");
-      return;
+      return null;
     }
 
     const reader = res.body.getReader();
@@ -79,16 +81,19 @@ async function streamChat(
           .map((l) => l.replace(/^data: /, ""))
           .join("\n");
         if (line === "[DONE]") {
-          return;
+          const ended = performance.now();
+          return { status: res.status, durationMs: ended - started };
         }
-        if (line) {
-          onDelta(line);
-        }
+        if (line) onDelta(line);
       }
     }
+    const ended = performance.now();
+    return { status: res.status, durationMs: ended - started };
   } catch (error) {
-    if ((error as Error).name === "AbortError") return;
-    onError((error as Error).message);
+    if ((error as Error).name !== "AbortError") {
+      onError((error as Error).message);
+    }
+    return null;
   }
 }
 
@@ -103,15 +108,27 @@ export default function Home() {
   const controllerRef = useRef<AbortController | null>(null);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [systemPrompt, setSystemPrompt] = useState("");
+  const [windowRange, setWindowRange] = useState({ start: 0, end: 50 });
+  const [toast, setToast] = useState<{
+    type: "error" | "info";
+    message: string;
+  } | null>(null);
+  const lastPayloadRef = useRef<ChatRequestPayload | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+
   const currentMessages = messages[currentConversationId] ?? [];
   const currentConversation = conversations.find(
     (c) => c.id === currentConversationId,
   );
-
+  const total = currentMessages.length;
   const providerModels = useMemo(() => {
     const p = PROVIDER_OPTIONS.find((item) => item.key === provider);
     return p?.models ?? [];
+  }, [provider]);
+
+  const canUploadMedia = useMemo(() => {
+    const p = PROVIDER_OPTIONS.find((item) => item.key === provider);
+    return Boolean(p?.capabilities?.vision || p?.capabilities?.video);
   }, [provider]);
 
   useEffect(() => {
@@ -126,13 +143,35 @@ export default function Home() {
     }
   }, [currentConversation?.systemPrompt]);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: 需要在消息数量变化时滚动到底部
+  // 切换会话重置窗口
   useEffect(() => {
-    scrollRef.current?.scrollTo({
-      top: scrollRef.current.scrollHeight,
-      behavior: "smooth",
+    const el = scrollRef.current;
+    if (el) {
+      el.scrollTop = el.scrollHeight;
+      const viewport = el.clientHeight ?? 0;
+      const visibleCount = Math.ceil(viewport / ROW_ESTIMATE) + OVERSCAN * 2;
+      setWindowRange({ start: Math.max(total - visibleCount, 0), end: total });
+    } else {
+      setWindowRange({ start: 0, end: Math.min(total, 50) });
+    }
+  }, [total]);
+
+  // 消息增量时滚到底并刷新窗口
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    const viewport = el.clientHeight || 0;
+    const visibleCount = Math.ceil(viewport / ROW_ESTIMATE) + OVERSCAN * 2;
+    const startIndex = Math.max(
+      0,
+      Math.floor(el.scrollTop / ROW_ESTIMATE) - OVERSCAN,
+    );
+    setWindowRange({
+      start: startIndex,
+      end: Math.min(total, startIndex + visibleCount),
     });
-  }, [currentMessages.length]);
+  }, [total]);
 
   const handleSend = async () => {
     if (
@@ -142,12 +181,32 @@ export default function Home() {
     )
       return;
     setError(null);
+    if (pendingFiles.length && !canUploadMedia) {
+      setError("当前 provider 不支持图片/视频，请切换支持视觉的模型");
+      return;
+    }
     const attachments = await uploadPendingFiles();
     if (attachments === null) {
       setIsSending(false);
       return;
     }
+
+    const payload: ChatRequestPayload = {
+      messages: [
+        ...(systemPrompt
+          ? [{ role: "system" as const, content: systemPrompt }]
+          : []),
+        ...currentMessages.map((m) => ({ role: m.role, content: m.content })),
+        { role: "user" as const, content: input.trim() },
+      ],
+      model,
+      provider,
+      options: { stream: true },
+      attachments,
+    };
+    lastPayloadRef.current = payload;
     actions.updateSystemPrompt(currentConversationId, systemPrompt);
+
     const userMessage: ChatMessage = {
       id: crypto.randomUUID(),
       conversationId: currentConversationId,
@@ -175,20 +234,8 @@ export default function Home() {
     const controller = new AbortController();
     controllerRef.current = controller;
 
-    await streamChat(
-      {
-        messages: [
-          ...(systemPrompt
-            ? [{ role: "system" as const, content: systemPrompt }]
-            : []),
-          ...currentMessages.map((m) => ({ role: m.role, content: m.content })),
-          { role: "user" as const, content: userMessage.content },
-        ],
-        model,
-        provider,
-        options: { stream: true },
-        attachments,
-      },
+    const result = await streamChat(
+      payload,
       (delta) => {
         actions.updateMessage(currentConversationId, assistantId, (prev) => ({
           ...prev,
@@ -197,6 +244,7 @@ export default function Home() {
       },
       (msg) => {
         setError(msg);
+        setToast({ type: "error", message: msg });
         actions.updateMessage(currentConversationId, assistantId, {
           status: "error",
         });
@@ -207,9 +255,73 @@ export default function Home() {
     actions.updateMessage(currentConversationId, assistantId, {
       status: "done",
     });
+    if (result) {
+      actions.updateStats(currentConversationId, {
+        lastLatencyMs: Math.round(result.durationMs),
+        lastStatus: result.status,
+        lastProvider: provider,
+      });
+      setToast({
+        type: "info",
+        message: `完成，耗时 ${Math.round(result.durationMs)}ms`,
+      });
+    }
     setIsSending(false);
     controllerRef.current = null;
     setPendingFiles([]);
+  };
+
+  const retryLast = async () => {
+    const payload = lastPayloadRef.current;
+    if (!payload || !currentConversationId || isSending) return;
+    setInput("");
+    setError(null);
+    setToast(null);
+    const controller = new AbortController();
+    controllerRef.current = controller;
+    setIsSending(true);
+    const assistantId = crypto.randomUUID();
+    actions.addMessage({
+      id: assistantId,
+      conversationId: currentConversationId,
+      role: "assistant",
+      content: "",
+      status: "streaming",
+      createdAt: Date.now(),
+    });
+    const result = await streamChat(
+      payload,
+      (delta) => {
+        actions.updateMessage(currentConversationId, assistantId, (prev) => ({
+          ...prev,
+          content: prev.content + delta,
+        }));
+      },
+      (msg) => {
+        setError(msg);
+        setToast({ type: "error", message: msg });
+        actions.updateMessage(currentConversationId, assistantId, {
+          status: "error",
+        });
+      },
+      { controller },
+    );
+    actions.updateMessage(currentConversationId, assistantId, {
+      status: "done",
+    });
+    if (result) {
+      actions.updateStats(currentConversationId, {
+        lastLatencyMs: Math.round(result.durationMs),
+        lastStatus: result.status,
+        lastProvider: provider,
+      });
+      setToast({
+        type: "info",
+        message: `重试成功，耗时 ${Math.round(result.durationMs)}ms`,
+      });
+    }
+    setIsSending(false);
+    controllerRef.current = null;
   };
 
   const handleStop = () => {
@@ -248,6 +360,7 @@ export default function Home() {
         if (!res.ok) {
           const text = await res.text();
           setError(text || "上传失败");
+          setToast({ type: "error", message: text || "上传失败" });
           return null;
         }
         const json = (await res.json()) as {
@@ -264,12 +377,21 @@ export default function Home() {
           name: json.name ?? file.name,
         });
       } catch (err) {
-        setError((err as Error).message);
+        const msg = (err as Error).message;
+        setError(msg);
+        setToast({ type: "error", message: msg });
         return null;
       }
     }
     return uploaded;
   }
+
+  const start = windowRange.start;
+  const end = Math.min(windowRange.end, total);
+  const visibleMessages = currentMessages.slice(start, end);
+  const paddingTop = start * ROW_ESTIMATE;
+  const paddingBottom = Math.max(total - end, 0) * ROW_ESTIMATE;
+  const lastStats = currentConversation?.stats;
 
   if (!loaded) {
     return (
@@ -313,6 +435,15 @@ export default function Home() {
                   <div className="text-[11px] text-muted-foreground">
                     {new Date(conv.updatedAt).toLocaleString()}
                   </div>
+                  {conv.stats ? (
+                    <div className="text-[11px] text-muted-foreground">
+                      {conv.stats.lastLatencyMs
+                        ? `${conv.stats.lastLatencyMs}ms`
+                        : "-"}{" "}
+                      · 状态 {conv.stats.lastStatus ?? "-"} ·{" "}
+                      {conv.stats.lastProvider ?? ""}
+                    </div>
+                  ) : null}
                 </button>
                 <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
                   <button
@@ -403,24 +534,72 @@ export default function Home() {
               </div>
             </div>
           ) : null}
+          {lastStats ? (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <span>最近响应</span>
+              <span>{lastStats.lastLatencyMs ?? "-"} ms</span>
+              <span>状态 {lastStats.lastStatus ?? "-"}</span>
+              <span>{lastStats.lastProvider ?? ""}</span>
+            </div>
+          ) : null}
           {error ? (
-            <div className="ml-auto text-sm text-destructive">{error}</div>
+            <div className="w-full rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              {error}
+              {lastPayloadRef.current ? (
+                <Button
+                  size="sm"
+                  variant="link"
+                  className="ml-2 px-1 py-0 text-destructive underline"
+                  onClick={() => void retryLast()}
+                >
+                  重试
+                </Button>
+              ) : null}
+            </div>
           ) : null}
         </header>
 
         <div className="flex flex-1 flex-col gap-4 px-4 py-4">
           <div
             ref={scrollRef}
-            className="flex-1 space-y-4 overflow-y-auto rounded-lg border bg-background p-4"
+            onScroll={() => {
+              const el = scrollRef.current;
+              if (!el) return;
+              const viewport = el.clientHeight || 0;
+              const visibleCount =
+                Math.ceil(viewport / ROW_ESTIMATE) + OVERSCAN * 2;
+              const startIndex = Math.max(
+                0,
+                Math.floor(el.scrollTop / ROW_ESTIMATE) - OVERSCAN,
+              );
+              setWindowRange({
+                start: startIndex,
+                end: Math.min(total, startIndex + visibleCount),
+              });
+            }}
+            className="flex-1 overflow-y-auto rounded-lg border bg-background"
           >
-            {currentMessages.length === 0 ? (
-              <div className="text-center text-sm text-muted-foreground">
+            {total === 0 ? (
+              <div className="p-4 text-center text-sm text-muted-foreground">
                 发送消息开始对话
               </div>
             ) : (
-              currentMessages.map((msg) => (
-                <MessageBubble key={msg.id} message={msg} />
-              ))
+              <div className="space-y-4 px-4 py-4">
+                <div
+                  className="space-y-4"
+                  style={{ paddingTop, paddingBottom }}
+                >
+                  {visibleMessages.map((msg) => (
+                    <MessageBubble key={msg.id} message={msg} />
+                  ))}
+                </div>
+                {total > end ? (
+                  <div className="text-center text-xs text-muted-foreground">
+                    已显示 {start + visibleMessages.length}/{total}{" "}
+                    条，滚动加载更多
+                  </div>
+                ) : null}
+              </div>
             )}
           </div>
 
@@ -443,14 +622,24 @@ export default function Home() {
                 当前会话：{conversations[0]?.title ?? "-"}
               </div>
               <div className="flex items-center gap-2">
-                <label className="flex cursor-pointer items-center gap-1 text-xs text-muted-foreground">
+                <label
+                  className={cn(
+                    "flex cursor-pointer items-center gap-1 text-xs text-muted-foreground",
+                    !canUploadMedia && "cursor-not-allowed opacity-60",
+                  )}
+                  title={
+                    canUploadMedia
+                      ? "支持图片/视频上传"
+                      : "当前 provider 不支持视觉能力"
+                  }
+                >
                   <input
                     type="file"
                     accept="image/*,video/*"
                     multiple
                     className="hidden"
                     onChange={(e) => handleFiles(e.target.files)}
-                    disabled={isSending}
+                    disabled={isSending || !canUploadMedia}
                   />
                   添加图片/视频
                 </label>
@@ -476,6 +665,29 @@ export default function Home() {
           </div>
         </div>
       </main>
+
+      {toast ? (
+        <div
+          className={cn(
+            "fixed bottom-4 right-4 rounded-md px-4 py-2 text-sm shadow-lg",
+            toast.type === "error"
+              ? "bg-destructive text-destructive-foreground"
+              : "bg-muted text-foreground",
+          )}
+        >
+          {toast.message}
+          {toast.type === "error" && lastPayloadRef.current ? (
+            <Button
+              variant="link"
+              size="sm"
+              className="ml-2 px-1 py-0 text-destructive-foreground underline"
+              onClick={() => void retryLast()}
+            >
+              重试
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -61,6 +61,7 @@ export async function POST(req: Request) {
     provider: providerKey,
     attachments,
     options,
+    systemPrompt,
   } = (body as Record<string, unknown>) ?? {};
 
   if (!isChatMessageArray(messages)) {
@@ -97,7 +98,12 @@ export async function POST(req: Request) {
 
   const upstreamBody = {
     model,
-    messages,
+    messages: [
+      ...(typeof systemPrompt === "string" && systemPrompt.trim()
+        ? [{ role: "system", content: systemPrompt.trim() }]
+        : []),
+      ...messages,
+    ],
     stream: streamFlag,
     ...(attachments ? { attachments } : {}),
   };
@@ -118,10 +124,11 @@ export async function POST(req: Request) {
 
   if (!upstreamResponse.ok || !upstreamResponse.body) {
     const text = await upstreamResponse.text().catch(() => "");
-    return errorResponse(
-      text || "上游返回异常",
-      upstreamResponse.status || 502,
-    );
+    const masked =
+      upstreamResponse.status === 401 || upstreamResponse.status === 403
+        ? "上游认证失败，请检查密钥"
+        : text || "上游返回异常";
+    return errorResponse(masked, upstreamResponse.status || 502);
   }
 
   const stream = new ReadableStream({

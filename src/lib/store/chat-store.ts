@@ -166,6 +166,30 @@ export function useChatStore() {
           };
         });
       },
+      updateStats(
+        id: string,
+        stats: {
+          lastLatencyMs?: number;
+          lastStatus?: number;
+          lastProvider?: string;
+        },
+      ) {
+        setState((prev) => ({
+          conversations: prev.conversations.map((c) =>
+            c.id === id
+              ? {
+                  ...c,
+                  stats: {
+                    ...(c.stats ?? {}),
+                    ...stats,
+                  },
+                  updatedAt: Date.now(),
+                }
+              : c,
+          ),
+          messages: prev.messages,
+        }));
+      },
       setCurrent(id: string) {
         setState((prev) => {
           const others = prev.conversations.filter((c) => c.id !== id);

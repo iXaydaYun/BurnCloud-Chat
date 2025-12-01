@@ -4,6 +4,11 @@ export type Conversation = {
   systemPrompt?: string;
   createdAt: number;
   updatedAt: number;
+  stats?: {
+    lastLatencyMs?: number;
+    lastStatus?: number;
+    lastProvider?: string;
+  };
 };
 
 export type MessageStatus = "pending" | "streaming" | "done" | "error";
