@@ -1,6 +1,5 @@
 import Image from "next/image";
 import type { Attachment, ChatMessage } from "@/lib/types";
-import { cn } from "@/lib/utils";
 
 function renderAttachment(att: Attachment) {
   if (att.type === "image" && att.url) {

@@ -60,6 +60,8 @@ type ChatRequestPayload = {
   providerConfig?: {
     baseUrl?: string;
     apiKey?: string;
+    defaultModel?: string;
+    models?: string[];
   };
 };
 
@@ -191,7 +193,10 @@ export default function Home() {
   const [providerConfig, setProviderConfig] = useState<{
     baseUrl?: string;
     apiKey?: string;
+    defaultModel?: string;
+    models?: string[];
   }>({});
+  const [refreshingModels, setRefreshingModels] = useState(false);
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
 
   const currentMessages = messages[currentConversationId] ?? [];
@@ -200,9 +205,11 @@ export default function Home() {
   );
   const total = currentMessages.length;
   const providerModels = useMemo(() => {
+    const custom = providerConfig.models;
+    if (custom?.length) return custom;
     const p = PROVIDER_OPTIONS.find((item) => item.key === provider);
     return p?.models ?? [];
-  }, [provider]);
+  }, [provider, providerConfig.models]);
 
   const canUploadMedia = useMemo(() => {
     const p = PROVIDER_OPTIONS.find((item) => item.key === provider);
@@ -266,8 +273,12 @@ export default function Home() {
         const parsed = JSON.parse(saved) as {
           baseUrl?: string;
           apiKey?: string;
+          defaultModel?: string;
         };
         setProviderConfig(parsed);
+        if (parsed.defaultModel) {
+          setModel(parsed.defaultModel);
+        }
       } catch (_error) {
         // ignore parse errors
       }
@@ -1306,6 +1317,82 @@ export default function Home() {
                   }
                 />
               </div>
+              <div className="space-y-1">
+                <label
+                  className="text-xs text-muted-foreground"
+                  htmlFor="burn-default-model"
+                >
+                  默认模型
+                </label>
+                <select
+                  id="burn-default-model"
+                  className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                  value={providerConfig.defaultModel ?? model}
+                  onChange={(e) =>
+                    setProviderConfig((p) => ({
+                      ...p,
+                      defaultModel: e.target.value,
+                    }))
+                  }
+                >
+                  {(providerConfig.models ?? PROVIDER_OPTIONS[0].models).map(
+                    (m) => (
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
+                    ),
+                  )}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label
+                  className="text-xs text-muted-foreground"
+                  htmlFor="burn-refresh-models"
+                >
+                  在线刷新模型（需填写 Base URL / API Key）
+                </label>
+                <Button
+                  id="burn-refresh-models"
+                  size="sm"
+                  variant="outline"
+                  disabled={refreshingModels}
+                  onClick={async () => {
+                    setRefreshingModels(true);
+                    try {
+                      const res = await fetch(
+                        `${providerConfig.baseUrl || "https://api.burncloud.com"}/v1/models`,
+                        {
+                          headers: {
+                            Authorization: `Bearer ${
+                              providerConfig.apiKey || ""
+                            }`,
+                          },
+                        },
+                      );
+                      if (!res.ok) throw new Error("获取模型列表失败");
+                      const json = (await res.json()) as {
+                        data?: { id?: string }[];
+                      };
+                      const ids =
+                        json.data
+                          ?.map((m) => m.id)
+                          .filter((id): id is string => Boolean(id)) ?? [];
+                      if (ids.length) {
+                        setProviderConfig((p) => ({ ...p, models: ids }));
+                        if (!ids.includes(model)) {
+                          setModel(ids[0]);
+                        }
+                      }
+                    } catch (error) {
+                      console.error(error);
+                    } finally {
+                      setRefreshingModels(false);
+                    }
+                  }}
+                >
+                  {refreshingModels ? "刷新中..." : "刷新模型列表"}
+                </Button>
+              </div>
               <div className="flex gap-2">
                 <Button
                   size="sm"
@@ -1316,8 +1403,15 @@ export default function Home() {
                         JSON.stringify({
                           baseUrl: (providerConfig.baseUrl ?? "").trim(),
                           apiKey: (providerConfig.apiKey ?? "").trim(),
+                          defaultModel:
+                            providerConfig.defaultModel ?? DEFAULT_MODEL,
+                          models: providerConfig.models,
                         }),
                       );
+                    }
+                    // 如果选择了默认模型，应用到当前选择
+                    if (providerConfig.defaultModel) {
+                      setModel(providerConfig.defaultModel);
                     }
                     setShowSettingsDialog(false);
                   }}
@@ -1332,6 +1426,7 @@ export default function Home() {
                       window.localStorage.removeItem("burncloud_config");
                     }
                     setProviderConfig({});
+                    setModel(DEFAULT_MODEL);
                     setShowSettingsDialog(false);
                   }}
                 >

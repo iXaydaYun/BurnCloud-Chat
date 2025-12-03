@@ -86,6 +86,11 @@ export async function POST(req: Request) {
     typeof (providerConfig as Record<string, unknown>)?.apiKey === "string"
       ? (providerConfig as Record<string, string>).apiKey
       : undefined;
+  const overrideModels = Array.isArray(
+    (providerConfig as Record<string, unknown>)?.models,
+  )
+    ? ((providerConfig as Record<string, string[]>).models ?? [])
+    : undefined;
 
   const provider = resolveProvider(providerKey, Boolean(overrideApiKey));
   if (!provider) {
@@ -93,7 +98,9 @@ export async function POST(req: Request) {
   }
 
   const baseUrl = overrideBaseUrl ?? provider.baseUrl;
-  if (provider.models.length > 0 && !provider.models.includes(model)) {
+  const modelsAllow = overrideModels ?? provider.models;
+
+  if (modelsAllow.length > 0 && !modelsAllow.includes(model)) {
     return errorResponse("model 不在该 provider 允许列表中", 400);
   }
 
