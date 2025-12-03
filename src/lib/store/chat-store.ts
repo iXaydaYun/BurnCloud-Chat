@@ -102,13 +102,27 @@ export function useChatStore() {
     () => ({
       addConversation(title?: string) {
         setState((prev) => {
+          const emptyExisting = prev.conversations.find(
+            (c) => (prev.messages[c.id]?.length ?? 0) === 0,
+          );
+          if (emptyExisting) {
+            setCurrentId(emptyExisting.id);
+            return {
+              conversations: [
+                { ...emptyExisting, updatedAt: Date.now() },
+                ...prev.conversations.filter((c) => c.id !== emptyExisting.id),
+              ],
+              messages: prev.messages,
+            };
+          }
+
           const conv = createConversation(title ?? "新的聊天");
+          setCurrentId(conv.id);
           return {
             conversations: [conv, ...prev.conversations],
             messages: { [conv.id]: [], ...prev.messages },
           };
         });
-        setCurrentId((prev) => prev || crypto.randomUUID());
       },
       renameConversation(id: string, title: string) {
         setState((prev) => ({
@@ -131,10 +145,20 @@ export function useChatStore() {
       addMessage(message: ChatMessage) {
         setState((prev) => {
           const list = prev.messages[message.conversationId] ?? [];
+          // 首条用户消息时，用消息内容更新会话标题，便于识别话题
+          const isFirstUserMessage =
+            list.length === 0 && message.role === "user";
+          const nextTitle = isFirstUserMessage
+            ? message.content.slice(0, 30)
+            : undefined;
           return {
             conversations: prev.conversations.map((c) =>
               c.id === message.conversationId
-                ? { ...c, updatedAt: Date.now() }
+                ? {
+                    ...c,
+                    title: nextTitle ? nextTitle : c.title,
+                    updatedAt: Date.now(),
+                  }
                 : c,
             ),
             messages: {
