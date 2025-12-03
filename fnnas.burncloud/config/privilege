@@ -1,0 +1,8 @@
+{
+    "defaults":
+    {
+        "run-as": "package"
+    },
+    "username": "fnnas.burncloud",
+    "groupname": "fnnas.burncloud"
+}

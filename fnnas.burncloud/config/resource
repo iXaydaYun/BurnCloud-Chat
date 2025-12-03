@@ -1,0 +1,28 @@
+{
+    "data-share":
+    {
+        "shares":
+        [
+            {
+                "name": "fnnas.burncloud",
+                "permission":
+                {
+                    "rw":
+                    [
+                        "fnnas.burncloud"
+                    ]
+                }
+            },
+            {
+                "name": "fnnas.burncloud/data",
+                "permission":
+                {
+                    "rw":
+                    [
+                        "fnnas.burncloud"
+                    ]
+                }
+            }
+        ]
+    }
+}

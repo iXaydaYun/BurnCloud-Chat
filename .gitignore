@@ -40,6 +40,9 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# fnnas
+fnnas.burncloud/app/server
+
 # AI vibe coding
 .agent
 AGENTS.md

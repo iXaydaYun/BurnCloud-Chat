@@ -1,0 +1,13 @@
+{
+    ".url": {
+        "fnnas.burncloud.Application": {
+            "title": "fnnas.burncloud",
+            "icon": "images/icon_{0}.png",
+            "type": "url",
+            "protocol": "http",
+            "port": "2333",
+            "url": "/",
+            "allUsers": false
+        }
+    }
+}
