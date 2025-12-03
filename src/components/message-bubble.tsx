@@ -39,14 +39,6 @@ function renderAttachment(att: Attachment) {
 export function MessageBubble({ message }: { message: ChatMessage }) {
   return (
     <div className="space-y-1">
-      <div
-        className={cn(
-          "text-[11px] text-muted-foreground",
-          message.role === "assistant" ? "text-left" : "text-right",
-        )}
-      >
-        {new Date(message.createdAt).toLocaleTimeString()}
-      </div>
       <div className="w-full whitespace-pre-wrap text-[15px] leading-7 text-foreground">
         {message.content || (message.status === "streaming" ? "…" : "")}
       </div>

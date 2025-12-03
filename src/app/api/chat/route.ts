@@ -62,6 +62,7 @@ export async function POST(req: Request) {
     attachments,
     options,
     systemPrompt,
+    providerConfig,
   } = (body as Record<string, unknown>) ?? {};
 
   if (!isChatMessageArray(messages)) {
@@ -76,11 +77,22 @@ export async function POST(req: Request) {
     return errorResponse("provider 必须为字符串", 400);
   }
 
-  const provider = resolveProvider(providerKey);
+  // 允许客户端传入的临时配置（用于本地调试/自定义网关），优先级高于 env
+  const overrideBaseUrl =
+    typeof (providerConfig as Record<string, unknown>)?.baseUrl === "string"
+      ? (providerConfig as Record<string, string>).baseUrl
+      : undefined;
+  const overrideApiKey =
+    typeof (providerConfig as Record<string, unknown>)?.apiKey === "string"
+      ? (providerConfig as Record<string, string>).apiKey
+      : undefined;
+
+  const provider = resolveProvider(providerKey, Boolean(overrideApiKey));
   if (!provider) {
     return errorResponse("未找到可用的 provider 或缺少对应密钥", 400);
   }
 
+  const baseUrl = overrideBaseUrl ?? provider.baseUrl;
   if (provider.models.length > 0 && !provider.models.includes(model)) {
     return errorResponse("model 不在该 provider 允许列表中", 400);
   }
@@ -94,7 +106,7 @@ export async function POST(req: Request) {
       ? (options as Record<string, boolean>).stream
       : true;
 
-  const url = new URL(provider.path, provider.baseUrl).toString();
+  const url = new URL(provider.path, baseUrl).toString();
 
   const upstreamBody = {
     model,
@@ -115,6 +127,9 @@ export async function POST(req: Request) {
       headers: {
         "Content-Type": "application/json",
         ...(provider.headers ?? {}),
+        ...(overrideApiKey
+          ? { Authorization: `Bearer ${overrideApiKey}` }
+          : {}),
       },
       body: JSON.stringify(upstreamBody),
     });

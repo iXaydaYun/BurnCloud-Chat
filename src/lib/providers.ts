@@ -12,20 +12,31 @@ export type ProviderConfig = {
 };
 
 export const providers: Record<string, ProviderConfig> = {
-  openai: {
-    name: "OpenAI",
-    baseUrl: process.env.OPENAI_BASE_URL ?? "https://api.openai.com",
+  burncloud: {
+    name: "BurnCloud",
+    baseUrl: process.env.BURNCLOUD_BASE_URL ?? "https://api.burncloud.com",
     path: "/v1/chat/completions",
-    apiKeyEnv: "OPENAI_API_KEY",
-    models: ["gpt-4o", "gpt-4.1", "gpt-3.5-turbo"],
+    apiKeyEnv: "BURNCLOUD_API_KEY",
+    models: [
+      "gpt-4.1",
+      "gpt-4o",
+      "claude-3-7-sonnet-20250219",
+      "claude-3-5-sonnet-20241022",
+      "deepseek-r1",
+      "deepseek-v3",
+    ],
     capabilities: { vision: true, video: false },
   },
 };
 
-export function resolveProvider(key: string): ProviderConfig | null {
+export function resolveProvider(
+  key: string,
+  allowMissingApiKey = false,
+): ProviderConfig | null {
   const provider = providers[key];
   if (!provider) return null;
   const apiKey = process.env[provider.apiKeyEnv];
-  if (!apiKey) return null;
-  return { ...provider, headers: { Authorization: `Bearer ${apiKey}` } };
+  if (!apiKey && !allowMissingApiKey) return null;
+  const headers = apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined;
+  return { ...provider, headers };
 }

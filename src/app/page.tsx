@@ -1,7 +1,14 @@
 "use client";
 
-import { PanelRightOpen, Pencil, Plus, Trash2 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { PanelRightOpen, Pencil, Plus, Settings, Trash2 } from "lucide-react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import { MessageBubble } from "@/components/message-bubble";
 import { Button } from "@/components/ui/button";
@@ -11,15 +18,22 @@ import { cn } from "@/lib/utils";
 
 const PROVIDER_OPTIONS = [
   {
-    key: "openai",
-    label: "OpenAI",
-    models: ["gpt-4o", "gpt-4.1", "gpt-3.5-turbo"],
+    key: "burncloud",
+    label: "BurnCloud",
+    models: [
+      "gpt-4.1",
+      "gpt-4o",
+      "claude-3-7-sonnet-20250219",
+      "claude-3-5-sonnet-20241022",
+      "deepseek-r1",
+      "deepseek-v3",
+    ],
     capabilities: { vision: true, video: false },
   },
 ];
 
 const DEFAULT_MODEL = "gpt-4o";
-const DEFAULT_PROVIDER = "openai";
+const DEFAULT_PROVIDER = "burncloud";
 const ROW_ESTIMATE = 120;
 const OVERSCAN = 6;
 
@@ -43,6 +57,10 @@ type ChatRequestPayload = {
   provider: string;
   options?: { stream?: boolean };
   attachments?: unknown;
+  providerConfig?: {
+    baseUrl?: string;
+    apiKey?: string;
+  };
 };
 
 function formatBytes(size: number) {
@@ -105,12 +123,31 @@ async function streamChat(
         const line = part
           .split("\n")
           .map((l) => l.replace(/^data: /, ""))
-          .join("\n");
+          .join("\n")
+          .trim();
+        if (!line) continue;
         if (line === "[DONE]") {
           const ended = performance.now();
           return { status: res.status, durationMs: ended - started };
         }
-        if (line) onDelta(line);
+        // 尝试解析 OpenAI/BurnCloud SSE JSON，提取 delta.content 或 message.content.delta
+        try {
+          const json = JSON.parse(line) as {
+            choices?: { delta?: { content?: string } }[];
+            message?: { content?: Array<{ text?: string; type?: string }> };
+          };
+          const delta = json.choices?.[0]?.delta?.content;
+          if (typeof delta === "string") {
+            onDelta(delta);
+            continue;
+          }
+          const textParts = json.message?.content?.map((c) => c.text).join("");
+          if (textParts) {
+            onDelta(textParts);
+          }
+        } catch {
+          // 非 JSON，忽略
+        }
       }
     }
     const ended = performance.now();
@@ -151,6 +188,11 @@ export default function Home() {
     | { type: null }
   >({ type: null });
   const [dialogInput, setDialogInput] = useState("");
+  const [providerConfig, setProviderConfig] = useState<{
+    baseUrl?: string;
+    apiKey?: string;
+  }>({});
+  const [showSettingsDialog, setShowSettingsDialog] = useState(false);
 
   const currentMessages = messages[currentConversationId] ?? [];
   const currentConversation = conversations.find(
@@ -215,6 +257,44 @@ export default function Home() {
       setDialogInput(dialog.title);
     }
   }, [dialog]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const saved = window.localStorage.getItem("burncloud_config");
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved) as {
+          baseUrl?: string;
+          apiKey?: string;
+        };
+        setProviderConfig(parsed);
+      } catch (_error) {
+        // ignore parse errors
+      }
+    }
+  }, []);
+
+  // 根据最新消息内容自动滚动（保持用户滚动意图：仅在接近底部时自动）
+  const lastMessageKey = useMemo(() => {
+    const last = currentMessages[currentMessages.length - 1];
+    return last
+      ? `${last.id}:${last.content.length}:${
+          last.attachments?.length ?? 0
+        }:${currentConversationId}`
+      : `empty:${currentConversationId}`;
+  }, [currentMessages, currentConversationId]);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 需要依赖 lastMessageKey 触发自动滚动
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const atBottom =
+      Math.abs(el.scrollHeight - el.scrollTop - el.clientHeight) < 120;
+    if (atBottom) {
+      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+      setIsAtBottom(true);
+    }
+  }, [lastMessageKey]);
 
   const jumpConversation = useCallback(
     (delta: number) => {
@@ -283,6 +363,7 @@ export default function Home() {
       provider,
       options: { stream: true },
       attachments,
+      providerConfig,
     };
     lastPayloadRef.current = payload;
     actions.updateSystemPrompt(currentConversationId, systemPrompt);
@@ -701,6 +782,22 @@ export default function Home() {
             </div>
 
             <div className="ml-auto flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => setShowSettingsDialog(true)}
+                aria-label="打开设置"
+              >
+                <Settings className="size-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => setShowContext((v) => !v)}
+                aria-label="切换上下文面板"
+              >
+                <PanelRightOpen className="size-4" />
+              </Button>
               {isSending ? (
                 <Button variant="outline" size="sm" onClick={handleStop}>
                   停止
@@ -1056,17 +1153,6 @@ export default function Home() {
         </div>
       </section>
 
-      {/* 浮动开关按钮 */}
-      <button
-        type="button"
-        className="fixed right-4 top-4 z-40 flex items-center gap-2 rounded-full border bg-background px-3 py-2 text-sm shadow-lg hover:bg-accent"
-        onClick={() => setShowContext((v) => !v)}
-        aria-label="切换上下文面板"
-      >
-        <PanelRightOpen className="size-4" />
-        上下文
-      </button>
-
       {toast ? (
         <output
           className={cn(
@@ -1159,6 +1245,102 @@ export default function Home() {
                   删除
                 </Button>
               )}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* 设置对话框 */}
+      {showSettingsDialog ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-lg rounded-2xl border bg-card p-5 shadow-lg">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-semibold text-foreground">
+                BurnCloud 设置
+              </h3>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => setShowSettingsDialog(false)}
+                aria-label="关闭设置"
+              >
+                ✕
+              </Button>
+            </div>
+            <div className="mt-3 space-y-3">
+              <div className="space-y-1">
+                <label
+                  className="text-xs text-muted-foreground"
+                  htmlFor="burn-base-url-modal"
+                >
+                  Base URL
+                </label>
+                <input
+                  id="burn-base-url-modal"
+                  className="w-full rounded-md border px-3 py-2 text-sm"
+                  placeholder="https://api.burncloud.com"
+                  value={providerConfig.baseUrl ?? ""}
+                  onChange={(e) =>
+                    setProviderConfig((p) => ({
+                      ...p,
+                      baseUrl: e.target.value,
+                    }))
+                  }
+                />
+              </div>
+              <div className="space-y-1">
+                <label
+                  className="text-xs text-muted-foreground"
+                  htmlFor="burn-api-key-modal"
+                >
+                  API Key
+                </label>
+                <input
+                  id="burn-api-key-modal"
+                  className="w-full rounded-md border px-3 py-2 text-sm"
+                  placeholder="BURNCLOUD_API_KEY"
+                  type="password"
+                  value={providerConfig.apiKey ?? ""}
+                  onChange={(e) =>
+                    setProviderConfig((p) => ({ ...p, apiKey: e.target.value }))
+                  }
+                />
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    if (typeof window !== "undefined") {
+                      window.localStorage.setItem(
+                        "burncloud_config",
+                        JSON.stringify({
+                          baseUrl: (providerConfig.baseUrl ?? "").trim(),
+                          apiKey: (providerConfig.apiKey ?? "").trim(),
+                        }),
+                      );
+                    }
+                    setShowSettingsDialog(false);
+                  }}
+                >
+                  保存
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    if (typeof window !== "undefined") {
+                      window.localStorage.removeItem("burncloud_config");
+                    }
+                    setProviderConfig({});
+                    setShowSettingsDialog(false);
+                  }}
+                >
+                  清除
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                参考文档：https://docs.burncloud.com
+              </p>
             </div>
           </div>
         </div>
