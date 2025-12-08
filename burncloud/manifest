@@ -1,10 +1,13 @@
-appname               = fnnas.burncloud
-version               = 1.0.0
+appname               = BurnCloud
+version               = 0.0.1
 display_name          = BurnCloud Chat
 desc                  = 提供了一个直观的聊天界面，允许用户与不同的AI模型进行交互，支持文件上传和系统提示定制，适合各种AI辅助场景。
 arch                  = x86_64
 source                = thirdparty
-maintainer            = ka1i
+maintainer            = iXayda
+maintainer_url        = https://github.com/iXaydaYun/BurnCloud-Chat
 distributor           = BurnCloud
+distributor_url       = https://www.burncloud.com
 desktop_uidir         = ui
-desktop_applaunchname = fnnas.burncloud.Application
+desktop_applaunchname = BurnCloud.Application
+install_dep_apps      = Node.js v22

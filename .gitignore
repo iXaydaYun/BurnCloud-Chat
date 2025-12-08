@@ -41,7 +41,7 @@ yarn-error.log*
 next-env.d.ts
 
 # fnnas
-fnnas.burncloud/app/server
+burncloud/app/server
 
 # AI vibe coding
 .agent

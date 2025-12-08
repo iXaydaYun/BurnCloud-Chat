@@ -1,0 +1,18 @@
+{
+    "data-share":
+    {
+        "shares":
+        [
+            {
+                "name": "burncloud",
+                "permission":
+                {
+                    "rw":
+                    [
+                        "burncloud"
+                    ]
+                }
+            }
+        ]
+    }
+}

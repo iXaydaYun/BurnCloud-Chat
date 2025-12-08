@@ -1,7 +1,7 @@
 {
     ".url": {
-        "fnnas.burncloud.Application": {
-            "title": "fnnas.burncloud",
+        "BurnCloud.Application": {
+            "title": "BurnCloud",
             "icon": "images/icon_{0}.png",
             "type": "url",
             "protocol": "http",
