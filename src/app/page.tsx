@@ -12,7 +12,7 @@ import {
 
 import { MessageBubble } from "@/components/message-bubble";
 import { Button } from "@/components/ui/button";
-import { useChatStore, generateId } from "@/lib/store/chat-store";
+import { generateId, useChatStore } from "@/lib/store/chat-store";
 import type { Attachment, ChatMessage } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -285,6 +285,15 @@ export default function Home() {
     }
   }, []);
 
+  useEffect(() => {
+    if (toast) {
+      const timer = setTimeout(() => {
+        setToast(null);
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [toast]);
+
   // 根据最新消息内容自动滚动（保持用户滚动意图：仅在接近底部时自动）
   const lastMessageKey = useMemo(() => {
     const last = currentMessages[currentMessages.length - 1];
@@ -417,9 +426,11 @@ export default function Home() {
       (msg) => {
         setError(msg);
         setToast({ type: "error", message: msg });
-        actions.updateMessage(currentConversationId, assistantId, {
+        actions.updateMessage(currentConversationId, assistantId, (prev) => ({
+          ...prev,
+          content: msg,
           status: "error",
-        });
+        }));
       },
       { controller },
     );
@@ -472,9 +483,11 @@ export default function Home() {
       (msg) => {
         setError(msg);
         setToast({ type: "error", message: msg });
-        actions.updateMessage(currentConversationId, assistantId, {
+        actions.updateMessage(currentConversationId, assistantId, (prev) => ({
+          ...prev,
+          content: msg,
           status: "error",
-        });
+        }));
       },
       { controller },
     );
@@ -1167,10 +1180,10 @@ export default function Home() {
       {toast ? (
         <output
           className={cn(
-            "fixed left-1/2 top-4 z-40 -translate-x-1/2 rounded-md px-4 py-2 text-sm shadow-lg",
+            "fixed left-1/2 top-12 z-50 -translate-x-1/2 rounded-lg px-5 py-3 text-sm font-medium shadow-lg transition-all duration-300 ease-in-out transform opacity-100 translate-y-0",
             toast.type === "error"
-              ? "bg-destructive text-destructive-foreground"
-              : "bg-muted text-foreground",
+              ? "bg-red-50 text-red-600 border border-red-200 shadow-red-100/50"
+              : "bg-green-50 text-green-600 border border-green-200 shadow-green-100/50",
           )}
           aria-live="polite"
         >
@@ -1179,7 +1192,7 @@ export default function Home() {
             <Button
               variant="link"
               size="sm"
-              className="ml-2 px-1 py-0 text-destructive-foreground underline"
+              className="ml-3 px-2 py-0 text-red-600 hover:text-red-800 font-medium underline"
               onClick={() => void retryLast()}
             >
               重试
