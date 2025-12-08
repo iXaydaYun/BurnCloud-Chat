@@ -14,7 +14,7 @@ export type ProviderConfig = {
 export const providers: Record<string, ProviderConfig> = {
   burncloud: {
     name: "BurnCloud",
-    baseUrl: process.env.BURNCLOUD_BASE_URL ?? "https://api.burncloud.com",
+    baseUrl: process.env.BURNCLOUD_BASE_URL ?? "https://ai.burncloud.com",
     path: "/v1/chat/completions",
     apiKeyEnv: "BURNCLOUD_API_KEY",
     models: [

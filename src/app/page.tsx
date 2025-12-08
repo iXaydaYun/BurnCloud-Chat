@@ -12,7 +12,7 @@ import {
 
 import { MessageBubble } from "@/components/message-bubble";
 import { Button } from "@/components/ui/button";
-import { useChatStore } from "@/lib/store/chat-store";
+import { useChatStore, generateId } from "@/lib/store/chat-store";
 import type { Attachment, ChatMessage } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -380,7 +380,7 @@ export default function Home() {
     actions.updateSystemPrompt(currentConversationId, systemPrompt);
 
     const userMessage: ChatMessage = {
-      id: crypto.randomUUID(),
+      id: generateId(),
       conversationId: currentConversationId,
       role: "user",
       content: input.trim(),
@@ -390,7 +390,7 @@ export default function Home() {
     };
     actions.addMessage(userMessage);
 
-    const assistantId = crypto.randomUUID();
+    const assistantId = generateId();
     const assistantMessage: ChatMessage = {
       id: assistantId,
       conversationId: currentConversationId,
@@ -452,7 +452,7 @@ export default function Home() {
     const controller = new AbortController();
     controllerRef.current = controller;
     setIsSending(true);
-    const assistantId = crypto.randomUUID();
+    const assistantId = generateId();
     actions.addMessage({
       id: assistantId,
       conversationId: currentConversationId,
@@ -1289,7 +1289,7 @@ export default function Home() {
                 <input
                   id="burn-base-url-modal"
                   className="w-full rounded-md border px-3 py-2 text-sm"
-                  placeholder="https://api.burncloud.com"
+                  placeholder="https://ai.burncloud.com"
                   value={providerConfig.baseUrl ?? ""}
                   onChange={(e) =>
                     setProviderConfig((p) => ({
@@ -1360,7 +1360,7 @@ export default function Home() {
                     setRefreshingModels(true);
                     try {
                       const res = await fetch(
-                        `${providerConfig.baseUrl || "https://api.burncloud.com"}/v1/models`,
+                        `${providerConfig.baseUrl || "https://ai.burncloud.com"}/v1/models`,
                         {
                           headers: {
                             Authorization: `Bearer ${
