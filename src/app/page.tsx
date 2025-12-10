@@ -198,6 +198,7 @@ export default function Home() {
   }>({});
   const [refreshingModels, setRefreshingModels] = useState(false);
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
 
   const currentMessages = messages[currentConversationId] ?? [];
   const currentConversation = conversations.find(
@@ -591,6 +592,12 @@ export default function Home() {
     }
   };
 
+  const handleLogout = useCallback(() => {
+    if (loggingOut) return;
+    setLoggingOut(true);
+    window.location.href = "/logout?next=/";
+  }, [loggingOut]);
+
   if (!loaded) {
     return (
       <div className="flex min-h-screen items-center justify-center text-muted-foreground">
@@ -806,6 +813,17 @@ export default function Home() {
             </div>
 
             <div className="ml-auto flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  void handleLogout();
+                }}
+                disabled={loggingOut}
+                aria-label="登出当前会话"
+              >
+                {loggingOut ? "登出中..." : "登出"}
+              </Button>
               <Button
                 variant="ghost"
                 size="icon-sm"

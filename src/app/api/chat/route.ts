@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { resolveBasicUserFromHeaders } from "@/lib/auth/basic-session";
 import { resolveProvider } from "@/lib/providers";
 
 type ChatMessage = {
@@ -48,6 +49,11 @@ function isAttachmentArray(val: unknown): val is AttachmentMeta[] {
 }
 
 export async function POST(req: Request) {
+  const username = await resolveBasicUserFromHeaders(req.headers);
+  if (!username) {
+    return errorResponse("需要 Basic Auth 登录", 401);
+  }
+
   let body: unknown;
   try {
     body = await req.json();
@@ -134,6 +140,7 @@ export async function POST(req: Request) {
       headers: {
         "Content-Type": "application/json",
         ...(provider.headers ?? {}),
+        "x-basic-auth-user": username,
         ...(overrideApiKey
           ? { Authorization: `Bearer ${overrideApiKey}` }
           : {}),

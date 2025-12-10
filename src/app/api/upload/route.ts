@@ -1,9 +1,19 @@
 import { NextResponse } from "next/server";
 
+import { resolveBasicUserFromHeaders } from "@/lib/auth/basic-session";
+
 const MAX_SIZE = 5 * 1024 * 1024; // 5MB
 const ALLOWED = ["image/", "video/"];
 
 export async function POST(req: Request) {
+  const authedUser = await resolveBasicUserFromHeaders(req.headers);
+  if (!authedUser) {
+    return NextResponse.json(
+      { error: { message: "需要 Basic Auth 登录" } },
+      { status: 401 },
+    );
+  }
+
   const formData = await req.formData();
   const file = formData.get("file");
 

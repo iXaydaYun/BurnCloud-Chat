@@ -28,13 +28,13 @@
 ### 安装依赖
 
 ```bash
-pnpm install
+npm install
 ```
 
 ### 启动开发服务器
 
 ```bash
-pnpm dev
+npm run dev
 ```
 
 应用将在 [http://localhost:3000](http://localhost:3000) 启动。
@@ -42,8 +42,8 @@ pnpm dev
 ### 构建生产版本
 
 ```bash
-pnpm build
-pnpm start
+npm run build
+npm start
 ```
 
 ## 使用指南
@@ -112,6 +112,21 @@ pnpm start
 - 默认模型
 - 支持的模型列表
 
+### Basic Auth 登录（方案 3）
+
+为了限制访问，只需配置最简单的 Basic Auth：
+
+1. 复制 `.env.example` 为 `.env` 并根据需要修改以下变量：
+   - `BASIC_AUTH_USERS`：支持多个 `username:password`，用逗号分隔。
+   - `BASIC_AUTH_SESSION_SECRET`：至少 32 个字符的随机密钥，用于签发临时 cookie。
+   - `BASIC_AUTH_SESSION_TTL`（可选）：会话有效期（秒），默认 3600 秒。
+   - `BASIC_AUTH_SESSION_COOKIE`（可选）：自定义 cookie 名称。
+2. 运行 `npm run dev` 或部署后，首次访问任意页面/接口会弹出浏览器自带的 Basic Auth 对话框。
+3. 验证成功后，中间件会写入短期 cookie，后续请求（包含 `/api/chat`、`/api/upload`）会自动携带 `x-basic-auth-user` 头部供服务器识别。
+4. 如需退出，可在主页右上角点击“登出”；系统会先清理 session cookie 并弹出浏览器自带的 Basic Auth 窗口，重新输入凭据后会自动回到首页。
+
+> ⚠️ 若未配置 `BASIC_AUTH_USERS` 或 `BASIC_AUTH_SESSION_SECRET`，应用会返回 500 以提示管理员补齐配置。
+
 ### 支持的 AI 提供商
 
 - **BurnCloud**：默认提供商，支持多种主流 AI 模型
@@ -124,16 +139,16 @@ pnpm start
 
 ```bash
 # 检查代码
-pnpm lint
+npm run lint
 
 # 自动格式化代码
-pnpm format
+npm run format
 ```
 
 ### 类型检查
 
 ```bash
-pnpm typecheck
+npm run typecheck
 ```
 
 ## 部署
