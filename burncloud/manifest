@@ -10,4 +10,4 @@ distributor           = BurnCloud
 distributor_url       = https://www.burncloud.com
 desktop_uidir         = ui
 desktop_applaunchname = BurnCloud.Application
-install_dep_apps      = Node.js v22
+install_dep_apps      = nodejs_v22

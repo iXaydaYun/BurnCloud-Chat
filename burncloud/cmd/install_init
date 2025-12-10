@@ -1,5 +1,10 @@
 #!/bin/bash
 
 ### This script is called before the user installs the application.
+# 获取用户在向导中的选择
+ADMIN_USERNAME="$wizard_admin_username"
+#ADMIN_PASSWORD="$wizard_admin_password"
+
+echo "UserName: $wizard_admin_username"
 
 exit 0

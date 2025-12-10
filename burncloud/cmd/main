@@ -4,6 +4,7 @@ LOG_FILE="${TRIM_PKGVAR}/info.log"
 PID_FILE="${TRIM_PKGVAR}/app.pid"
 
 # write the command to start your program here 
+
 export PATH=/var/apps/nodejs_v22/target/bin:$PATH
 DATA_DIR="${TRIM_DATA_SHARE_PATHS%%:*}"
 CMD="DATA_DIR=${DATA_DIR} PORT=2333 node ${TRIM_APPDEST}/server/server.js"
@@ -18,8 +19,22 @@ start_process() {
     fi
 
     log_msg "Starting process ..."
+
+    if [ -z "$wizard_admin_username" ]; then
+        log_msg "UserName is empty, please input user name."
+        return 137
+    fi
+
+        if [ -z "$wizard_admin_password" ]; then
+        log_msg "Password is empty, please input password."
+        return 137
+    fi
+
+    log_msg "Username: $wizard_admin_username"
+    # log_msg "Password: $wizard_admin_password"
+
     # run cmd to start process
-    bash -c "${CMD}" >> ${LOG_FILE} 2>&1 &
+    bash -c "BASIC_AUTH_USERS=${wizard_admin_username}:${wizard_admin_password} ${CMD}" >> ${LOG_FILE} 2>&1 &
     # write pid to pidfile
     printf "%s" "$!" > ${PID_FILE}
     # log_msg "CMD = ${CMD}"
